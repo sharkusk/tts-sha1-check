@@ -8,9 +8,9 @@ usage: sha1-check.py [-h] [-b BACKUP_PATH] mod_path
 
 # Sample Run
 ```
-> python .\sha1-check.py -b 'C:\Program Files (x86)\Steam\steamapps\common\Tabletop Simulator\Tabletop Simulator_Data\Mods\Backup' 'C:\Program Files (x86)\Steam\steamapps\common\Tabletop Simulator\Tabletop Simulator_Data\Mods'
+> python .\sha1-check.py -b 'C:\Backup' 'C:\Program Files (x86)\Steam\steamapps\common\Tabletop Simulator\Tabletop Simulator_Data\Mods'
 Mod dir: C:\Program Files (x86)\Steam\steamapps\common\Tabletop Simulator\Tabletop Simulator_Data\Mods
-Backup dir: C:\Program Files (x86)\Steam\steamapps\common\Tabletop Simulator\Tabletop Simulator_Data\Mods\Backup
+Backup dir: C:\Backup
 
 Mods
 Assetbundles...10
