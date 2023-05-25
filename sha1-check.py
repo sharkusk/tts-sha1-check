@@ -18,7 +18,6 @@ FILES_TO_IGNORE = ['.RAWT', '.RAWM', '.TMP']
 TTS_RAW_DIRS = {'Images Raw': '.rawt', 'Models Raw': '.rawm'}
 
 def check_sha1s(root_dir, backup_dir=None):
-    file_count = 0
     for root, dirs, files in os.walk(root_dir):
         dir_name = pathlib.PurePath(root).name
 
@@ -30,16 +29,31 @@ def check_sha1s(root_dir, backup_dir=None):
                 continue
 
         print()
-        print(f"{dir_name}", end='')
-        steam_files = fnmatch.filter(files, 'httpcloud3steamusercontent*')
-        for filename in steam_files:
-            mismatch_found = False
+        print(f"{dir_name}", end='\r', flush=True)
 
+        steam_files = fnmatch.filter(files, 'httpcloud3steamusercontent*')
+        file_count = 0
+
+        verified_path = os.path.join(root, 'sha1-verified.txt')
+        if os.path.exists(verified_path):
+            with open(verified_path, 'r') as fin:
+                verified_files = fin.read().splitlines()
+        else:
+            verified_files = []
+
+        for filename in steam_files:
             ext = os.path.splitext(filename)[1]
             if ext.upper() in FILES_TO_IGNORE:
                 continue
 
-            print('.', end='', flush=True)
+            if filename in verified_files:
+                continue
+
+            file_count += 1
+            mismatch_found = False
+
+            print(f"{dir_name}...{file_count}", end='\r', flush=True)
+
             expected_hexdigest = os.path.splitext(filename)[0][-40:]
             filepath = os.path.join(root, filename)
             with open(filepath, "rb") as f:
@@ -47,10 +61,11 @@ def check_sha1s(root_dir, backup_dir=None):
 
                 if expected_hexdigest.upper() != digest.hexdigest().upper():
                     print()
-                    print(f"  -{filename}", end='', flush=True)
+                    print(f"  SHA-1 Mismatch in {filename}", flush=True)
                     mismatch_found = True
                 else:
                     mismatch_found = False
+                    verified_files.append(filename)
 
             # Need to do this outside of open() to prevent file from being in use
             if mismatch_found == True:
@@ -65,12 +80,14 @@ def check_sha1s(root_dir, backup_dir=None):
                     raw_filepath = os.path.join(raw_filepath, raw_filename)
 
                     if os.path.exists(raw_filepath):
-                        print()
-                        print(f"  -{raw_filename}", end='', flush=True)
+                        print(f"  Found matching raw file: {raw_filename}", flush=True)
 
                         if backup_dir is not None:
                             newpath = os.path.join(backup_dir, raw_filename)
                             shutil.move(raw_filepath, newpath)
+
+        with open(verified_path, 'w') as outfile:
+            outfile.write('\n'.join(str(i) for i in verified_files))
 
 def dir_path(path):
     if os.path.isdir(path):
