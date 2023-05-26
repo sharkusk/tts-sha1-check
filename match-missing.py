@@ -1,11 +1,11 @@
 import hashlib
 import os
-import fnmatch
 import pathlib
 import shutil
 import argparse
-import pickle
 import re
+import sqlite3
+from contextlib import closing
 
 # Recursively read each directory
 # Load existing dictionary, for each file not found in dictionary:
@@ -17,18 +17,11 @@ import re
 #   Copy and rename to destination directory
 
 # Ignore raw files as they are created by TTS
-FILES_TO_IGNORE = ['.RAWT', '.RAWM', '.TMP', '.BIN']
+FILES_TO_IGNORE = ['.RAWT', '.RAWM', '.TMP', '.DB']
 
 TTS_RAW_DIRS = {'Images Raw': '.rawt', 'Models Raw': '.rawm'}
 
-def find_missing(root_dir, missing_file_path, backup_dir=None):
-
-    sha_cache_path = os.path.join(root_dir, 'sha1-cache.bin')
-    if os.path.exists(sha_cache_path):
-        with open(sha_cache_path, 'rb') as fin:
-            sha1s = pickle.load(fin)
-    else:
-        sha1s = {}
+def find_missing(root_dir, missing_file_path, cursor, backup_dir=None):
 
     duplicate_sha1s = 0
 
@@ -53,7 +46,10 @@ def find_missing(root_dir, missing_file_path, backup_dir=None):
                 continue
 
             filepath = os.path.join(root, filename)
-            if filepath in sha1s.values():
+
+            cursor.execute("SELECT * FROM tts_files WHERE filename=?", (filename,))
+            result = cursor.fetchone()
+            if result:
                 continue
 
             file_count += 1
@@ -62,27 +58,23 @@ def find_missing(root_dir, missing_file_path, backup_dir=None):
 
             if 'httpcloud3steamusercontent' in filename :
                 hexdigest = os.path.splitext(filename)[0][-40:]
-
-                if hexdigest.upper() in sha1s:
-                    duplicate_sha1s += 1
-                else:
-                    sha1s[hexdigest.upper()] = filepath
             else:
                 with open(filepath, "rb") as f:
                     digest = hashlib.file_digest(f, "sha1")
                 hexdigest = digest.hexdigest()
+            
+            hexdigest = hexdigest.upper()
 
-                # Always prioritize storing calculated sha1 values
-                # to be more efficient.
-                if hexdigest.upper() in sha1s:
-                    duplicate_sha1s += 1
-                sha1s[hexdigest.upper()] = filepath
+            cursor.execute("SELECT * FROM tts_files WHERE sha1=?", (hexdigest,))
+            result = cursor.fetchone()
+            if result:
+                duplicate_sha1s += 1
+            
+            cursor.execute("INSERT INTO tts_files VALUES (?, ?, ?)", (filename, hexdigest, root))
 
     print(f"Found {duplicate_sha1s} duplicate sha1 files during scan.")
 
-    with open(sha_cache_path, 'wb') as outfile:
-        pickle.dump(sha1s, outfile)
-            
+    found_missing = 0
     with open(missing_file_path, 'r') as f:
         for filename in f:
             filename = filename.strip()
@@ -91,8 +83,11 @@ def find_missing(root_dir, missing_file_path, backup_dir=None):
                 filename = filename[:-1]
             wanted_hexdigest = filename[-40:].upper()
 
-            if wanted_hexdigest in sha1s:
-                prev_filepath = sha1s[wanted_hexdigest]
+            cursor.execute("SELECT * FROM tts_files WHERE sha1=?", (wanted_hexdigest,))
+            result = cursor.fetchone()
+            if result:
+                found_missing += 1
+                prev_filepath = os.path.join(result[2], result[0])
                 print(f"Found file matching desired SHA-1: {prev_filepath}")
 
                 # httpcloud3steamusercontentcomugc1014943920257914113D6644503664E262C9C0B610A39C9AB2E98AC599C.png
@@ -103,6 +98,7 @@ def find_missing(root_dir, missing_file_path, backup_dir=None):
                     newpath = os.path.join(backup_dir, new_filename+new_ext)
                     shutil.copy(prev_filepath, newpath)
 
+    print(f"Found {found_missing} missing files.")
 
 def dir_path(path):
     if os.path.isdir(path):
@@ -131,5 +127,19 @@ if __name__ == '__main__':
     print("Mod dir:", args.mod_path)
     print("Missing URL file:", args.missing_url_file)
     print("Backup dir:", args.backup_path)
-    
-    find_missing(args.mod_path, args.missing_url_file, args.backup_path)
+
+    DB_NAME = "tts-sha1.db"
+
+    if not os.path.exists(DB_NAME):
+        init_table = True
+    else:
+        init_table = False
+
+    with closing(sqlite3.connect(DB_NAME)) as conn:
+        with closing(conn.cursor()) as cursor:
+            if init_table:
+                cursor.execute("""CREATE TABLE tts_files
+                (filename TEXT, sha1 TEXT, path TEXT)
+                """)
+            
+            find_missing(args.mod_path, args.missing_url_file, cursor, args.backup_path)
