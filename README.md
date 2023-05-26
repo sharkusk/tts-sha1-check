@@ -6,6 +6,8 @@ usage: sha1-check.py [-h] [-b BACKUP_PATH] mod_path
 
 *NOTE: Do not include a trailing '\\' character as part of the paths.  This causes bad things to happen when windows is passing the arguments to python.*
 
+If there is a case where you replaced a PDF or upgraded an image, but didn't change the TTS mod file, you can make this script skip checking that file by adding the filename to sha1-verified.txt in the corresponding directory.
+
 # Sample Run
 ```
 > python .\sha1-check.py -b 'C:\Backup' 'C:\Program Files (x86)\Steam\steamapps\common\Tabletop Simulator\Tabletop Simulator_Data\Mods'

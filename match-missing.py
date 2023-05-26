@@ -21,8 +21,7 @@ FILES_TO_IGNORE = ['.RAWT', '.RAWM', '.TMP', '.DB']
 
 TTS_RAW_DIRS = {'Images Raw': '.rawt', 'Models Raw': '.rawm'}
 
-def find_missing(root_dir, missing_file_path, cursor, backup_dir=None):
-
+def scan_sha1s(root_dir, cursor):
     duplicate_sha1s = 0
 
     for root, dirs, files in os.walk(root_dir):
@@ -30,10 +29,6 @@ def find_missing(root_dir, missing_file_path, cursor, backup_dir=None):
 
         if dir_name in TTS_RAW_DIRS:
             continue
-
-        if backup_dir is not None:
-            if root.upper() == backup_dir.upper():
-                continue
 
         print()
         print(f"{dir_name}", end='\r', flush=True)
@@ -45,16 +40,20 @@ def find_missing(root_dir, missing_file_path, cursor, backup_dir=None):
             if ext.upper() in FILES_TO_IGNORE:
                 continue
 
+            file_count += 1
+            print(f"{dir_name}...{file_count}", end='\r', flush=True)
+
             filepath = os.path.join(root, filename)
 
-            cursor.execute("SELECT * FROM tts_files WHERE filename=?", (filename,))
+            cursor.execute("SELECT EXISTS(SELECT 1 FROM tts_files WHERE filename=? LIMIT 1)", (filename,));
             result = cursor.fetchone()
-            if result:
+            if result[0] == 1:
                 continue
 
-            file_count += 1
-
-            print(f"{dir_name}...{file_count}", end='\r', flush=True)
+            #cursor.execute("SELECT * FROM tts_files WHERE filename=?", (filename,))
+            #result = cursor.fetchone()
+            #if result:
+            #    continue
 
             if 'httpcloud3steamusercontent' in filename :
                 hexdigest = os.path.splitext(filename)[0][-40:]
@@ -65,15 +64,21 @@ def find_missing(root_dir, missing_file_path, cursor, backup_dir=None):
             
             hexdigest = hexdigest.upper()
 
-            cursor.execute("SELECT * FROM tts_files WHERE sha1=?", (hexdigest,))
+            cursor.execute("SELECT EXISTS(SELECT 1 FROM tts_files WHERE sha1=? LIMIT 1)", (hexdigest,));
             result = cursor.fetchone()
-            if result:
+            if result[0] == 1:
                 duplicate_sha1s += 1
+
+            #cursor.execute("SELECT * FROM tts_files WHERE sha1=?", (hexdigest,))
+            #result = cursor.fetchone()
+            #if result:
+            #    duplicate_sha1s += 1
             
             cursor.execute("INSERT INTO tts_files VALUES (?, ?, ?)", (filename, hexdigest, root))
 
     print(f"Found {duplicate_sha1s} duplicate sha1 files during scan.")
 
+def find_missing(missing_file_path, cursor, backup_dir=None):
     found_missing = 0
     with open(missing_file_path, 'r') as f:
         for filename in f:
@@ -88,7 +93,7 @@ def find_missing(root_dir, missing_file_path, cursor, backup_dir=None):
             if result:
                 found_missing += 1
                 prev_filepath = os.path.join(result[2], result[0])
-                print(f"Found file matching desired SHA-1: {prev_filepath}")
+                print(f"Found match:\n{result[0]}\n{filename}")
 
                 # httpcloud3steamusercontentcomugc1014943920257914113D6644503664E262C9C0B610A39C9AB2E98AC599C.png
                 new_filename = re.sub('[./:-]', '', filename)
@@ -121,6 +126,7 @@ if __name__ == '__main__':
     parser.add_argument('mod_path', type=dir_path, help='Do not include a \ at the end of the path')
     parser.add_argument('missing_url_file', type=file_path)
     parser.add_argument('-b', '--backup_path', type=dir_path, help='Do not include a \ at the end of the path')
+    parser.add_argument('-s', '--skip_scan', action='store_true', help='Skip scanning files for SHA-1 values')
     
     args = parser.parse_args()
 
@@ -142,4 +148,8 @@ if __name__ == '__main__':
                 (filename TEXT, sha1 TEXT, path TEXT)
                 """)
             
-            find_missing(args.mod_path, args.missing_url_file, cursor, args.backup_path)
+            if not args.skip_scan:
+                scan_sha1s(args.mod_path, cursor)
+                conn.commit()
+
+            find_missing(args.missing_url_file, cursor, args.backup_path)
